@@ -350,22 +350,6 @@ impl Cache {
 }
 
 
-
-// enum FrontEndMessage {
-//     Query(Query),
-//     Parse(Parse),
-//     Bind,
-//     Close,
-//     Describe(Describe),
-//     Execute(Execute),
-//     Flush,
-//     Sync,
-//     Terminate,
-//     CopyData,
-//     CopyFail,
-//     CopyDone,
-// }
-
 #[derive(Debug, Serialize) ]
 struct ParseComplete {
     Byte1: u8,
@@ -621,100 +605,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     EXECUTE => {
                                         println!("Execute message from client");
                                         state = state.next(EXECUTE , a , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
-                                        // match state {
-
-                                        //     Cache::CacheHit(ref check) => {
-                                        //         println!("inside cache hit execute");
-                                        //         match check {
-                                        //             State::ParseCompleteServer(hash) => {
-                                        //                 // bind complete
-                                        //                 let bind_complete = BindComplete {
-                                        //                     Byte1: BIND_COMPLETE,
-                                        //                     len: 5,
-                                        //                 };
-                                                        
-                                        //                 // convert to bytes
-                                        //                 let a = bincode::serialize(&bind_complete).unwrap();
-                                        //                 // send message to the client
-                                        //                 println!("Sending bind complete message to client");
-                                        //                 write_message(&mut tx, a).await.unwrap();
-                                        //                 // data row 
-                                        //                 let main = data.read().await;
-                                        //                 let cache = main.get(&hash).unwrap();
-                                        //                 for row in &cache.data {
-                                        //                     println!("Sending cached data row");
-                                        //                     let encoded = row.encode_data_row();
-                                        //                     write_message(&mut tx, encoded).await.unwrap();
-                                        //                 }
-                                        //                 // command complete
-                                        //                 let command_complete = CommandComplete {
-                                        //                     Byte1: COMMAND_COMPLETE,
-                                        //                     len: 5,
-                                        //                     command: format!("SELECT {}" , cache.data.len()),
-                                        //                 };
-                                        //                 // convert to bytes
-                                        //                 let a = bincode::serialize(&command_complete).unwrap();
-                                        //                 // send message to the client
-                                        //                 write_message(&mut tx, a).await.unwrap();
-                                        //                 let ready_for_query = ReadyForQuery {
-                                        //                     Byte1: READY_FOR_QUERY,
-                                        //                     len: 5,
-                                        //                     status: 'I',
-                                        //                 };
-                                        //                 let a = bincode::serialize(&ready_for_query).unwrap();
-                                        //                 write_message(&mut tx, a).await.unwrap();
-                                        //                 state = Cache::CacheHit(State::Init);
-                                        //             },
-                                        //             _ => {
-                                        //                 write_message(&mut st, a).await.unwrap();
-                                        //             }
-                                        //         }
-                                        //     },
-                                        //     Cache::CacheMiss(ref check) => {
-                                        //         match check {
-                                        //             State::ParseCompleteServer(hash) => {
-                                        //                 write_message(&mut st, a).await.unwrap();
-                                        //                 state = Cache::CacheMiss(State::ExecuteClient(*hash));
-                                        //             },
-                                        //             _ => {
-                                        //                 write_message(&mut st, a).await.unwrap();
-                                        //             }
-                                        //         }
-                                        //     },
-                                        // }
                                     },
                                     DESCRIBE => {
                                         // let desc = Describe::decode_describe_message(&mut a);
                                         println!("Describe message from client " );
                                         state = state.next(DESCRIBE , a , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
-                                        // match state {
-                                        //     Cache::CacheHit(ref check) => {
-                                        //         match check {
-                                        //             State::ParseClient(hash) => {
-                                        //                 let cache = data.read().await;
-                                        //                 let parameter_desc = cache.get(&hash).unwrap().parameter_description.clone();
-                                        //                 write_message(&mut tx, parameter_desc).await.unwrap();
-                                                       
-                                        //                 state = Cache::CacheHit(State::ParseCompleteServer(*hash));
-                                        //             },
-                                        //             _ => {
-                                        //                 write_message(&mut st, a).await.unwrap();
-                                        //             }
-                                        //         }
-                                        //     },
-                                        //     Cache::CacheMiss(ref check) => {
-                                        //         match check {
-                                        //             State::ParseClient(hash) => {
-                                                        
-                                        //                 write_message(&mut st, a).await.unwrap();
-                                        //                 state = Cache::CacheMiss(State::DescribeClient(*hash));
-                                        //             },
-                                        //             _ => {
-                                        //                 write_message(&mut st, a).await.unwrap();
-                                        //             }
-                                        //         }
-                                        //     } ,
-                                        // }
                                     },
                                     TERMINATE => {
                                         println!("Terminate message from client");
@@ -761,102 +656,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 match back_end_message {
                                     DATA_ROW => {
                                         println!("Data row message from server");
-
                                         state = state.next(DATA_ROW , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
-
-                                        // match state {
-                                        //     Cache::CacheMiss(ref check) => {
-                                        //         match check {
-                                        //             State::BindCompleteServer(hash) =>{
-                                        //                 println!("caching data row");
-                                        //                 let data_row = DataRow::decode_data_row(&mut b);
-                                        //                 let mut main = data.write().await;
-                                        //                 let cache = main.entry(*hash).or_insert(DataEntry {
-                                        //                     data: Vec::new(),
-                                        //                     parameter_description: Vec::new(),
-                                        //                 });
-                                        //                 cache.data.push(data_row);
-                                        //                 write_message(&mut tx, b).await.unwrap();
-                                        //                 state = Cache::CacheMiss(State::DataRowServer(*hash));
-                                        //             },
-                                        //             State::DataRowServer(hash) => {
-                                        //                 println!("caching data row");
-                                        //                 let data_row = DataRow::decode_data_row(&mut b);
-                                        //                 let mut main = data.write().await;
-                                        //                 let cache = main.get_mut(&hash).unwrap();
-                                        //                 cache.data.push(data_row);
-                                        //                 write_message(&mut tx, b).await.unwrap();
-                                        //             },
-                                        //             _ => {
-                                        //                 write_message(&mut tx, b).await.unwrap();
-                                        //             }
-                                        //         }
-                                        //     },
-                                        //     _ => {
-                                        //         write_message(&mut tx, b).await.unwrap();
-                                        //     }
-                                        // }
                                     },
                                     COMMAND_COMPLETE => {
                                         println!("Command complete message from server");
                                         state = state.next(COMMAND_COMPLETE , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
-                                        // match state {
-                                        //     Cache::CacheMiss(ref check) => {
-                                        //         match check {
-                                        //             State::DataRowServer(_) =>{
-                                        //                 state = Cache::CacheMiss(State::Init);
-                                        //                 write_message(&mut tx, b).await.unwrap();
-                                        //             }, 
-                                        //             _ => {
-                                        //                 write_message(&mut tx, b).await.unwrap();
-                                        //             }
-                                        //         }
-                                        //     },
-                                        //     _ => {
-                                        //         write_message(&mut tx, b).await.unwrap();
-                                        //     }
-                                        // }
                                     },
                                     PARSE_COMPLETE => {
                                         println!("Parse Complete message from server: {:?}" , b);
                                         state = state.next(PARSE_COMPLETE , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
-                                        // set state to parse complete
-                                        // match state {
-                                        //     Cache::CacheMiss(ref check) => {
-                                        //         match check {
-                                        //             State::ParameterDescriptionServer(hash) =>{
-                                        //                 state = Cache::CacheMiss(State::ParseCompleteServer(*hash));
-                                        //                 write_message(&mut tx, b).await.unwrap();
-                                        //             }
-                                        //             _ => {
-                                        //                 write_message(&mut tx, b).await.unwrap();
-                                        //             }
-                                        //         }
-                                        //     },
-                                        //     _ => {
-                                        //         write_message(&mut tx, b).await.unwrap();
-                                        //     }
-                                        // }
                                     },
                                     BIND_COMPLETE => {
                                         println!("Bind Complete message from server");
                                         state = state.next(BIND_COMPLETE , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
-                                        // match state {
-                                        //     Cache::CacheMiss(ref check) => {
-                                        //         match check {
-                                        //             State::ExecuteClient(hash) =>{
-                                        //                 state = Cache::CacheMiss(State::BindCompleteServer(*hash));
-                                        //                 write_message(&mut tx, b).await.unwrap();
-                                        //             }
-                                        //             _ => {
-                                        //                 write_message(&mut tx, b).await.unwrap();
-                                        //             }
-                                        //         }
-                                        //     },
-                                        //     _ => {
-                                        //         write_message(&mut tx, b).await.unwrap();
-                                        //     }
-                                        // }
                                     },
                                     READY_FOR_QUERY => {
                                         // if cache hit is happening dont send ready for query message
@@ -883,35 +695,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                     },
                                     PARAMETER_DESCRIPTION => {
-
                                         println!("Parameter Description message from server");
                                         state = state.next(PARAMETER_DESCRIPTION , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
-                                        // match state {
-                                        //     Cache::CacheMiss(ref check) => {
-                                        //         match check {
-                                        //             State::DescribeClient(hash) =>{
-                                        //                 let mut main = data.write().await;
-                                        //                 // most likely it  will not exist in the hashmap
-                                        //                 let cache = main.entry(*hash).or_insert(DataEntry {
-                                        //                     data: Vec::new(),
-                                        //                     parameter_description: Vec::new(),
-                                        //                 });
-                                        //                 cache.parameter_description = b.clone();
-                                        //                 println!("caching parameter description");
-                                        //                 write_message(&mut tx, b).await.unwrap();
-                                        //                 state = Cache::CacheMiss(State::ParameterDescriptionServer(*hash));
-                                        //             },
-                                        //             _ => {
-                                        //                 write_message(&mut tx, b).await.unwrap();
-                                        //             }
-                                        //         }
-                                        //     },
-                                        //     _ => {
-                                        //         write_message(&mut tx, b).await.unwrap();
-                                        //     }
-                                        // }
-
-
                                     },
                                     ROW_DESCRIPTION => {
                                         println!("Row Description message from server");
