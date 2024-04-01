@@ -1,9 +1,7 @@
-use core::num;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
-use std::hash::{self, Hash, Hasher};
-use std::io::{self, Read};
-use std::process::Command;
+use std::hash::{ Hash, Hasher};
+use std::io::{self};
 use std::sync::Arc;
 use byteorder::{BigEndian, ByteOrder};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -11,7 +9,7 @@ use tokio::net::tcp::{ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 
-use serde::{Serialize, Deserialize};
+use serde::Serialize;
 pub const STARTUP: u8 = b'p';
 pub const QUERY: u8 = b'Q';
 pub const PARSE: u8 = b'P';
@@ -69,13 +67,11 @@ impl Query {
     }
 }
 
-
 struct CloseComplete {
     Byte1: u8,
     len: i32,
     msg : String,
 }
-
 
 impl CloseComplete {
     fn encode_close_complete(num_rows: usize) -> Vec<u8> {
@@ -92,8 +88,6 @@ impl CloseComplete {
         buf
     }
 }
-
-
 
 #[derive(Debug, PartialEq)]
 enum Cache {
@@ -119,7 +113,7 @@ enum State {
 }
 
 impl Cache {
-    async fn next<'a>(&self , message: u8 , mut buffer: Vec<u8> ,  data:  Arc<RwLock<HashMap<u64, DataEntry>>> ,client_read_half: &mut ReadHalf<'a> , server_read_half : &mut ReadHalf<'a>  , client_write_half: &mut WriteHalf<'a> , server_write_half : &mut WriteHalf<'a> ) -> Cache {
+    async fn next<'a>(&self , message: u8 , mut buffer: Vec<u8> ,  data:  Arc<RwLock<HashMap<u64, DataEntry>>> ,  _client_read_half: &mut ReadHalf<'a> , _server_read_half : &mut ReadHalf<'a>  , client_write_half: &mut WriteHalf<'a> , server_write_half : &mut WriteHalf<'a> ) -> Cache {
         match (self , message) {
             (Cache::CacheMiss(State::Init) , PARSE) => {
                 let parser = Parse::decode_parse_message(&mut buffer);
@@ -138,7 +132,7 @@ impl Cache {
 
                 
                 match cache {
-                    Some(c) => {
+                    Some(_) => {
                         // send parse complete message to the client
                         let parse = ParseComplete::encode_parse_complete();
                         write_message(client_write_half, parse).await.unwrap();
@@ -274,7 +268,6 @@ impl Cache {
             // for all cachemiss init send the message to the server
             // now time to implement cache hit
             (Cache::CacheHit(State::ParseClient(hash)) , DESCRIBE) => {
-               
                 let data = data.read().await;
                 let cache = data.get(&hash).unwrap();
                 // send back the parameter description and row description
@@ -295,27 +288,20 @@ impl Cache {
             },
 
             (Cache::CacheHit(State::BindClient(hash)) , EXECUTE) => {
-                // send the data row
                 let main = data.read().await;
                 let cache = main.get(&hash).unwrap();
                 for row in &cache.data {
                     let encoded = row.encode_data_row();
                     write_message(client_write_half, encoded).await.unwrap();
                 }
-
-                // send the command complete message
-                let mut command_complete = CommandComplete::encode_command_complete(cache.data.len());
-                let check = get_cstring(&mut command_complete[5..]).unwrap();
+                let command_complete = CommandComplete::encode_command_complete(cache.data.len());
                 write_message(client_write_half, command_complete).await.unwrap();
                 return Cache::CacheHit(State::CommandCompleteServer(*hash));
             },
             (Cache::CacheHit(State::CommandCompleteServer(hash)) , CLOSE) => {
-                // send close complete 
-               
                 let data = data.read().await;
                 let cache = data.get(&hash).unwrap();
-                let mut close_complete = CloseComplete::encode_close_complete(cache.data.len());
-                
+                let close_complete = CloseComplete::encode_close_complete(cache.data.len());
                 write_message(client_write_half, close_complete).await.unwrap();
                 return Cache::CacheHit(State::Init);
             }, 
@@ -331,8 +317,6 @@ impl Cache {
             },
             _ => {
                 return Cache::CacheMiss(State::Init);
-               
-                
             }
         }
     }
@@ -367,27 +351,17 @@ struct CommandComplete {
 
 impl CommandComplete {
     fn encode_command_complete(num_rows: usize) -> Vec<u8> {
-        // let mut buf = vec![0; 5];
-        // buf[0] = COMMAND_COMPLETE;
-        // BigEndian::write_i32(&mut buf[1..5], 4);
-        // buf
         let mut buf = vec![];
         buf.push(COMMAND_COMPLETE);
-        // let mut init = vec![0; 4]; this will be the length of the message which is going to change
-        // BigEndian::write_i32(&mut init, 4);
-
         let main_str = format!("SELECT {}\0", num_rows);
         let mut msg = vec![0; main_str.len()];
         msg.copy_from_slice(main_str.as_bytes());
-
         let len = 4 + main_str.len() as i32;
         let mut init = vec![0; 4];
         BigEndian::write_i32(&mut init, len);
-
         buf.extend(init);
         buf.extend(msg);
         buf
-
     }
 }
 
@@ -641,7 +615,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                     b = read_with_type_server(&mut sr) => {
                         match b {
-                            Ok(mut b) => {
+                            Ok(b) => {
                                 let back_end_message = b[0];
                                 match back_end_message {
                                     DATA_ROW => {
