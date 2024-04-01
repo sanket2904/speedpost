@@ -95,12 +95,13 @@ impl CloseComplete {
 
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Cache {
     CacheHit(State),
     CacheMiss(State),
+    NotNeeded,
 }
-#[derive(Debug)]
+#[derive(Debug , PartialEq)]
 enum State {
     Init,
     // ReadyForQueryServer,
@@ -121,18 +122,25 @@ impl Cache {
     async fn next<'a>(&self , message: u8 , mut buffer: Vec<u8> ,  data:  Arc<RwLock<HashMap<u64, DataEntry>>> ,client_read_half: &mut ReadHalf<'a> , server_read_half : &mut ReadHalf<'a>  , client_write_half: &mut WriteHalf<'a> , server_write_half : &mut WriteHalf<'a> ) -> Cache {
         match (self , message) {
             (Cache::CacheMiss(State::Init) , PARSE) => {
-               
-                let data = data.read().await;
                 let parser = Parse::decode_parse_message(&mut buffer);
+                if !parser.query.contains("SELECT") {
+                    write_message(server_write_half, buffer).await.unwrap();
+                    return Cache::NotNeeded;
+                } 
+
+
+                let data = data.read().await;
+                
                 let hash = create_hash(&parser.query);
                 let cache = data.get(&hash);
                 write_message(server_write_half, buffer).await.unwrap();
+                // check if the query contains the word SELECT otherwise dont do anything
+
+                
                 match cache {
                     Some(c) => {
                         // send parse complete message to the client
-
                         let parse = ParseComplete::encode_parse_complete();
-                        println!("Sending parse complete message to client");
                         write_message(client_write_half, parse).await.unwrap();
                         return Cache::CacheHit(State::ParseClient(hash))
                     },
@@ -142,6 +150,12 @@ impl Cache {
                     }
                 }
             },
+
+            (Cache::NotNeeded, _) => {
+                write_message(server_write_half, buffer).await.unwrap();
+                return Cache::NotNeeded;
+            },
+
             (Cache::CacheMiss(State::ParseClient(hash)) , DESCRIBE) => {
                 // let describe = Describe::decode_describe_message(&mut buffer);
                 write_message(server_write_half, buffer).await.unwrap();
@@ -248,7 +262,6 @@ impl Cache {
             },
             // if the command is close and the cache is miss just send the message to the server but the state could be anything
             (Cache::CacheMiss(_) , CLOSE) => {
-                println!("Sending close message to server");
                 write_message(server_write_half, buffer).await.unwrap();
                 return Cache::CacheMiss(State::Init);
             },
@@ -258,11 +271,8 @@ impl Cache {
                 return Cache::CacheMiss(State::Init);
             },
 
-
-
-
+            // for all cachemiss init send the message to the server
             // now time to implement cache hit
-
             (Cache::CacheHit(State::ParseClient(hash)) , DESCRIBE) => {
                
                 let data = data.read().await;
@@ -280,31 +290,25 @@ impl Cache {
             // manage bind 
             (Cache::CacheHit(State::SyncClient(hash)) , BIND) => {
                 let bind_complete = BindComplete::encode_bind_complete();
-                println!("sending bind complete");
                 write_message(client_write_half, bind_complete).await.unwrap();
                 return Cache::CacheHit(State::BindClient(*hash));
             },
 
             (Cache::CacheHit(State::BindClient(hash)) , EXECUTE) => {
                 // send the data row
-                println!("cache hit execute");
                 let main = data.read().await;
                 let cache = main.get(&hash).unwrap();
                 for row in &cache.data {
                     let encoded = row.encode_data_row();
                     write_message(client_write_half, encoded).await.unwrap();
-                    println!("sent the data rows");
                 }
-                
+
                 // send the command complete message
                 let mut command_complete = CommandComplete::encode_command_complete(cache.data.len());
                 let check = get_cstring(&mut command_complete[5..]).unwrap();
-                println!("check: {:?}", check);
                 write_message(client_write_half, command_complete).await.unwrap();
                 return Cache::CacheHit(State::CommandCompleteServer(*hash));
             },
-
-
             (Cache::CacheHit(State::CommandCompleteServer(hash)) , CLOSE) => {
                 // send close complete 
                
@@ -312,34 +316,20 @@ impl Cache {
                 let cache = data.get(&hash).unwrap();
                 let mut close_complete = CloseComplete::encode_close_complete(cache.data.len());
                 
-                println!("Sending close complete message to client");
                 write_message(client_write_half, close_complete).await.unwrap();
                 return Cache::CacheHit(State::Init);
             }, 
-
             (Cache::CacheHit(State::Init) , SYNC) => {
-                println!("in the end");
                 let ready = ReadyForQuery::encode_ready_for_query();
                 write_message(client_write_half, ready).await.unwrap();
                 return Cache::CacheHit(State::Init);
             },
-
-
             (Cache::CacheHit(State::CommandCompleteServer(hash)), SYNC) => {
                 let ready = ReadyForQuery::encode_ready_for_query();
                 write_message(client_write_half, ready).await.unwrap();
-                println!("Cache hit ready for query not sending message to client");
                 return Cache::CacheHit(State::CommandCompleteServer(*hash));
             },
-
-
-
-
-
-
             _ => {
-                println!("Current state: {:?}", self);
-                println!("Unknown message from client or something we dont care about {:b}",message);
                 return Cache::CacheMiss(State::Init);
                
                 
@@ -592,48 +582,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match a {
                             Ok(mut a) => {
                                 let front_end_message = a[0];
+                                
                                 match front_end_message {
+                                    
                                     QUERY => {
                                         let query = Query::decode_query_message(&mut a);
-                                        println!("Query message from client: {:?}", query);
                                         write_message(&mut st, a).await.unwrap();
                                     },
                                     PARSE => {
-                                        println!("Parse message from client");
                                         state = state.next(PARSE , a , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        // write_message(&mut st, a).await.unwrap();
                                     },
                                     EXECUTE => {
-                                        println!("Execute message from client");
                                         state = state.next(EXECUTE , a , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        // write_message(&mut st, a).await.unwrap();
                                     },
                                     DESCRIBE => {
                                         // let desc = Describe::decode_describe_message(&mut a);
-                                        println!("Describe message from client " );
                                         state = state.next(DESCRIBE , a , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        // write_message(&mut st, a).await.unwrap();
                                     },
                                     TERMINATE => {
-                                        println!("Terminate message from client");
+                                        write_message(&mut st, a).await.unwrap();
                                         break;
                                     },
                                     SYNC => {
-                                        println!("Sync message from client");
-                                        // write_message(&mut st, a).await.unwrap();
-                                        println!("current state: {:?}", state);
+                                        
                                         state = state.next(SYNC , a , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        // write_message(&mut st, a).await.unwrap();
                                     },
+                                    
                                     BIND => {
-                                        println!("Bind message from client");
                                         // write_message(&mut st, a).await.unwrap();
                                         state = state.next(BIND , a , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        // write_message(&mut st, a).await.unwrap();
                                     },
                                     CLOSE => {
-                                        println!("Close message from client");
-                                        println!("current state: {:?}", state);
+                                        // println!("current state: {:?}", state);
                                         state = state.next(CLOSE , a , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        // write_message(&mut st, a).await.unwrap();
                                     },
                                     _ => {
-                                        
-                                        println!("Unknown message from client or something we dont care about {:b}",a[0]);
+                                        //println!("Unknown message from client or something we dont care about {:b}",a[0]);
                                         write_message(&mut st, a).await.unwrap();
                                     }
                                 }
@@ -655,57 +645,64 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let back_end_message = b[0];
                                 match back_end_message {
                                     DATA_ROW => {
-                                        println!("Data row message from server");
-                                        state = state.next(DATA_ROW , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        // write_message(&mut tx, b).await.unwrap();
+                                        if state == Cache::NotNeeded {
+                                            write_message(&mut tx, b).await.unwrap();
+                                        } else {
+                                            state = state.next(DATA_ROW , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        }
                                     },
                                     COMMAND_COMPLETE => {
-                                        println!("Command complete message from server");
-                                        state = state.next(COMMAND_COMPLETE , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        // write_message(&mut tx, b).await.unwrap();
+                                        
+                                        if state == Cache::NotNeeded {
+                                            write_message(&mut tx, b).await.unwrap();
+                                        } else {
+                                            state = state.next(COMMAND_COMPLETE , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        }
                                     },
                                     PARSE_COMPLETE => {
-                                        println!("Parse Complete message from server: {:?}" , b);
-                                        state = state.next(PARSE_COMPLETE , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        // write_message(&mut tx, b).await.unwrap();
+                                        if state == Cache::NotNeeded {
+                                            write_message(&mut tx, b).await.unwrap();
+                                        } else {
+                                            state = state.next(PARSE_COMPLETE , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        }
                                     },
                                     BIND_COMPLETE => {
-                                        println!("Bind Complete message from server");
-                                        state = state.next(BIND_COMPLETE , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        // write_message(&mut tx, b).await.unwrap();
+                                        if state == Cache::NotNeeded {
+                                            write_message(&mut tx, b).await.unwrap();
+                                        } else {
+                                            state = state.next(BIND_COMPLETE , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        }
                                     },
                                     READY_FOR_QUERY => {
                                         // if cache hit is happening dont send ready for query message
-                                        println!("Ready for query message from server");
-
-                                        let ready = ReadyForQuery::decode_ready_for_query(&mut b);
-                                        println!("Ready for query message from server: {:?}", ready);
-
-                                        match state {
-                                            Cache::CacheMiss(ref check) => {
-                                                match check {
-                                                    State::BindCompleteServer(_) =>{
-                                                        write_message(&mut tx, b).await.unwrap();
-                                                    },
-                                                    _ => {
-                                                        write_message(&mut tx, b).await.unwrap();
-                                                    }
-                                                }
-                                            },
-                                            Cache::CacheHit(_) => {
-                                                write_message(&mut tx, b).await.unwrap();
-                                                println!("Cache hit ready for query not sending message to client main");
-                                            }
-                                        }
+                                        write_message(&mut tx, b).await.unwrap();
                                     },
                                     PARAMETER_DESCRIPTION => {
-                                        println!("Parameter Description message from server");
-                                        state = state.next(PARAMETER_DESCRIPTION , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        // write_message(&mut tx, b).await.unwrap();
+                                        if state == Cache::NotNeeded {
+                                            write_message(&mut tx, b).await.unwrap();
+                                        } else {
+                                            state = state.next(PARAMETER_DESCRIPTION , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        }
                                     },
                                     ROW_DESCRIPTION => {
-                                        println!("Row Description message from server");
-                                        // write_message(&mut tx, b).await.unwrap();
-                                        state = state.next(ROW_DESCRIPTION , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+
+                                        if state == Cache::NotNeeded {
+                                            write_message(&mut tx, b).await.unwrap();
+                                        } else {
+                                            state = state.next(ROW_DESCRIPTION , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
+                                        }
+
+
+                                        // state = state.next(ROW_DESCRIPTION , b , data.clone() , &mut rx , &mut sr , &mut tx , &mut st).await;
                                     },
                                     unknown => {
                                         write_message(&mut tx, b).await.unwrap();
-                                        println!("Unknown message from server or something we dont care about {:b}",unknown);
+                                       // println!("Unknown message from server or something we dont care about {:b}",unknown);
                                     }
                                 }
                             },
@@ -714,7 +711,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     println!("Client disconnected: {}", client_addr);
                                     break;
                                 } else {
-                                    println!("Error: {:?}", e);
+                                    println!("Error line 731: {:?}", e);
                                     break;
                                 }
                             }
