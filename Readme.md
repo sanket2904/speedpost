@@ -11,7 +11,7 @@ This project is an implementation of the PostgreSQL wire protocol with added in-
 To get started with this project, clone the repository and build the project using your preferred Rust toolchain.
 
 ```bash
-git clone https://github.com/yourusername/yourrepository.git
+git clone https://github.com/sanket2904/speedpost.git
 cd yourrepository
 cargo build
 # env variables for database connection just use the url don't use the username and password
