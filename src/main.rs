@@ -8,8 +8,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
-
 use serde::Serialize;
+
+
 pub const STARTUP: u8 = b'p';
 pub const QUERY: u8 = b'Q';
 pub const PARSE: u8 = b'P';
@@ -541,7 +542,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(async move {
             client_socket.set_nodelay(true).unwrap();
             let (mut rx, mut tx) = client_socket.split();
-            let mut server = TcpStream::connect("127.0.0.1:5432").await.unwrap();
+            let uri = std::env::var("DATABASE_URL").unwrap();
+            let mut server = TcpStream::connect(uri).await.unwrap();
             server.set_nodelay(true).unwrap();
             let (mut sr, mut st) = server.split();
             let res = read_first_message(&mut rx).await.unwrap();
