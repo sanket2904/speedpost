@@ -12,10 +12,10 @@ To get started with this project, clone the repository and build the project usi
 
 ```bash
 git clone https://github.com/sanket2904/speedpost.git
-cd yourrepository
-cargo build
+cd speedpost
+cargo build --release
 # env variables for database connection just use the url don't use the username and password
 export DATABASE_URL=127.0.0.1:5432
-cargo run 
+cargo run or ./target/release/speedpost
 ```
 
